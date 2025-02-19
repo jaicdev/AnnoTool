@@ -173,47 +173,48 @@ class AnnotationTool(QMainWindow):
     def change_model(self):
         selected_model = self.model_dropdown.currentText()
         self.model_manager.set_current_model(selected_model)
-
     def auto_annotate(self):
-        model = self.model_manager.get_model()
-        if not model:
-            QMessageBox.warning(self, "Error", "No model selected or model failed to load.")
-            return
+    model = self.model_manager.get_model()
+    if not model:
+        QMessageBox.warning(self, "Error", "No model selected or model failed to load.")
+        return
 
-        image = self.canvas.get_current_image()
-        if image is None:
-            QMessageBox.warning(self, "Error", "No image loaded.")
-            return
+    image = self.canvas.get_current_image()
+    if image is None:
+        QMessageBox.warning(self, "Error", "No image loaded.")
+        return
 
-        self.push_undo()
+    self.push_undo()
 
-        # Run model prediction
-        results = model.predict(image)
+    # Run model prediction
+    results = model.predict(image)
 
-        # Normalize predictions for bounding boxes and segmentation masks
-        annotations = []
-        for result in results:
-            # Process bounding boxes
-            for box in result.boxes:  # Assuming result.boxes contains bounding box data
-                x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())  # Convert to integers
-                cls = int(box.cls[0])  # Class ID
-                annotations.append({
-                    "type": "bbox",
-                    "coords": [x1, y1, x2 - x1, y2 - y1],  # Convert to [x, y, width, height]
-                    "class": cls
-                })
-
-            # Process segmentation masks (if available)
-            if result.masks:
-                for mask, cls in zip(result.masks.data, result.boxes.cls):
+    annotations = []
+    for result in results:
+        # Process bounding boxes if available
+        if hasattr(result, 'boxes'):
+            for box in result.boxes:
+                try:
+                    x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+                    cls = int(box.cls[0])
                     annotations.append({
-                        "type": "mask",
-                        "mask": mask.cpu().numpy(),  # Convert to NumPy array
-                        "class": int(cls)
+                        "type": "bbox",
+                        "coords": [x1, y1, x2 - x1, y2 - y1],
+                        "class": cls
                     })
-
-        print(f"Annotations: {annotations}")  # Debugging log
-        self.canvas.set_annotations(annotations)
+                except Exception as e:
+                    print(f"Error processing bbox: {e}")
+        # Process segmentation masks if available
+        if hasattr(result, 'masks') and result.masks is not None:
+            masks = result.masks.data if hasattr(result.masks, 'data') else []
+            boxes_cls = result.boxes.cls if hasattr(result.boxes, 'cls') else []
+            for mask, cls in zip(masks, boxes_cls):
+                annotations.append({
+                    "type": "mask",
+                    "coords": mask.cpu().numpy().tolist(),  # Converting to list for consistency
+                    "class": int(cls)
+                })
+    self.canvas.set_annotations(annotations)
 
     def activate_draw_bbox(self):
         QMessageBox.information(self, "Draw BBox", "Tool to draw bounding boxes activated!")
