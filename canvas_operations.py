@@ -1,19 +1,24 @@
-
+# canvas_operations.py
 import cv2
 import numpy as np
 from PyQt5.QtWidgets import QLabel
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QPen, QColor
-from PyQt5.QtCore import Qt, QPoint
+from PyQt5.QtCore import Qt, QPoint, QRect
 
 class AnnotationCanvas(QLabel):
     def __init__(self):
         super().__init__()
         self.setScaledContents(True)
-        self.annotations = []
-        self.current_image = None
-        self.layers = {}
+        # Use a layers dictionary for annotations
+        self.layers = {"default": []}
         self.current_layer = "default"
-        self.layers[self.current_layer] = []
+        self.current_image = None
+
+        # Variables for drawing
+        self.drawing_mode = None  # "bbox" or "mask"
+        self.start_point = None
+        self.end_point = None
+        self.mask_points = []
 
     def load_image(self, image_path):
         image = cv2.imread(image_path)
@@ -44,75 +49,49 @@ class AnnotationCanvas(QLabel):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        for layer, annotations in self.layers.items():
-            if layer == self.current_layer:  # Only draw the current layer
-                for annotation in annotations:
-                    try:
-                        self.draw_annotation(painter, annotation)
-                    except ValueError as e:
-                        print(f"Error drawing annotation: {e}")
-                        
-    def _draw_bbox(self, painter, coords):
-        # Convert coordinates to integers
-        x, y, w, h = [int(c) for c in coords]
-        pen = QPen(QColor(0, 255, 0), 2)
-        painter.setPen(pen)
-        painter.drawRect(x, y, w, h)
+        # Draw existing annotations from the current layer
+        for annotation in self.layers.get(self.current_layer, []):
+            try:
+                self.draw_annotation(painter, annotation)
+            except ValueError as e:
+                print(f"Error drawing annotation: {e}")
 
-
+        # Draw in-progress annotation if drawing
+        if self.drawing_mode == "bbox" and self.start_point and self.end_point:
+            pen = QPen(QColor(0, 255, 255), 2, Qt.DashLine)
+            painter.setPen(pen)
+            rect = QRect(self.start_point, self.end_point).normalized()
+            painter.drawRect(rect)
+        elif self.drawing_mode == "mask" and self.mask_points:
+            pen = QPen(QColor(255, 0, 0), 2)
+            painter.setPen(pen)
+            for i in range(1, len(self.mask_points)):
+                painter.drawLine(self.mask_points[i - 1], self.mask_points[i])
+        painter.end()
 
     def draw_annotation(self, painter, annotation):
-        if "type" not in annotation or "coords" not in annotation:
-            raise ValueError("Annotation must have 'type' and 'coords' keys.")
-
+        if "type" not in annotation:
+            raise ValueError("Annotation must have a 'type' key.")
         annotation_type = annotation["type"]
-        coords = annotation["coords"]
 
         if annotation_type == "bbox":
-            self._draw_bbox(painter, coords)
-        elif annotation_type == "ellipse":
-            self._draw_ellipse(painter, coords)
-        elif annotation_type == "cuboid":
-            self._draw_cuboid(painter, coords)
-        elif annotation_type == "polygon":
-            self._draw_polygon(painter, coords)
-        elif annotation_type == "keypoints":
-            self._draw_keypoints(painter, coords)
+            self._draw_bbox(painter, annotation["coords"])
+        elif annotation_type == "mask":
+            # Draw mask as connected points (or use polyline if desired)
+            points = [QPoint(pt[0], pt[1]) for pt in annotation["coords"]]
+            pen = QPen(QColor(255, 0, 0), 2)
+            painter.setPen(pen)
+            if points:
+                painter.drawPolyline(*points)
         else:
             raise ValueError(f"Unsupported annotation type: {annotation_type}")
 
     def _draw_bbox(self, painter, coords):
-        x, y, w, h = coords
+        # Convert coordinates to integers
+        x, y, w, h = map(int, coords)
         pen = QPen(QColor(0, 255, 0), 2)
         painter.setPen(pen)
         painter.drawRect(x, y, w, h)
-
-    def _draw_ellipse(self, painter, coords):
-        x, y, w, h = coords
-        pen = QPen(QColor(255, 0, 0), 2)
-        painter.setPen(pen)
-        painter.drawEllipse(x, y, w, h)
-
-    def _draw_cuboid(self, painter, coords):
-        # Example implementation for 3D cuboid drawing
-        # For simplicity, treating it as a 2D projection
-        points = [QPoint(*coord) for coord in coords]
-        pen = QPen(QColor(0, 0, 255), 2)
-        painter.setPen(pen)
-        for i in range(len(points)):
-            painter.drawLine(points[i], points[(i + 1) % len(points)])
-
-    def _draw_polygon(self, painter, coords):
-        points = [QPoint(pt[0], pt[1]) for pt in coords]
-        pen = QPen(QColor(255, 0, 0), 2)
-        painter.setPen(pen)
-        painter.drawPolygon(*points)
-
-    def _draw_keypoints(self, painter, coords):
-        pen = QPen(QColor(0, 0, 255), 2)
-        painter.setPen(pen)
-        for pt in coords:
-            painter.drawEllipse(pt[0] - 2, pt[1] - 2, 4, 4)
 
     def set_annotations(self, annotations):
         if not isinstance(annotations, list):
@@ -121,7 +100,7 @@ class AnnotationCanvas(QLabel):
         self.update()
 
     def get_annotations(self):
-        return self.layers[self.current_layer]
+        return self.layers.get(self.current_layer, [])
 
     def add_layer(self, layer_name):
         if layer_name in self.layers:
@@ -134,99 +113,48 @@ class AnnotationCanvas(QLabel):
         self.current_layer = layer_name
         self.update()
 
-    def save_template(self, template_name):
-        # Save current annotations as a template
-        return {template_name: self.layers[self.current_layer]}
+    # Mouse events integrated for drawing
+    def mousePressEvent(self, event):
+        if self.drawing_mode == "bbox" and event.button() == Qt.LeftButton:
+            self.start_point = event.pos()
+            self.end_point = event.pos()
+        elif self.drawing_mode == "mask" and event.button() == Qt.LeftButton:
+            self.mask_points = [event.pos()]
+        super().mousePressEvent(event)
 
-    def apply_template(self, template):
-        # Apply a saved template to the current layer
-        self.layers[self.current_layer].extend(template)
-        self.update()
+    def mouseMoveEvent(self, event):
+        if self.drawing_mode == "bbox" and self.start_point:
+            self.end_point = event.pos()
+            self.update()
+        elif self.drawing_mode == "mask" and event.buttons() & Qt.LeftButton:
+            self.mask_points.append(event.pos())
+            self.update()
+        super().mouseMoveEvent(event)
 
-    def group_annotations(self, annotation_indices):
-        # Group selected annotations (example implementation)
-        grouped_annotations = [self.layers[self.current_layer][i] for i in annotation_indices]
-        group = {"type": "group", "annotations": grouped_annotations}
-        self.layers[self.current_layer] = [
-            anno for i, anno in enumerate(self.layers[self.current_layer]) if i not in annotation_indices
-        ]
-        self.layers[self.current_layer].append(group)
-        self.update()
+    def mouseReleaseEvent(self, event):
+        if self.drawing_mode == "bbox" and self.start_point and event.button() == Qt.LeftButton:
+            rect = QRect(self.start_point, event.pos()).normalized()
+            annotation = {
+                "type": "bbox",
+                "coords": [rect.x(), rect.y(), rect.width(), rect.height()]
+            }
+            self.layers[self.current_layer].append(annotation)
+            self.start_point = None
+            self.end_point = None
+            self.update()
+        elif self.drawing_mode == "mask" and self.mask_points:
+            annotation = {
+                "type": "mask",
+                "coords": [(p.x(), p.y()) for p in self.mask_points]
+            }
+            self.layers[self.current_layer].append(annotation)
+            self.mask_points = []
+            self.update()
+        super().mouseReleaseEvent(event)
 
-    # New Methods for Advanced Annotations
-    def _draw_polyline(self, painter, coords):
-        pen = QPen(QColor(0, 255, 255), 2)
-        painter.setPen(pen)
-        points = [QPoint(pt[0], pt[1]) for pt in coords]
-        painter.drawPolyline(*points)
-
-    def _draw_segmentation_mask(self, painter, mask):
-        overlay = QPixmap(self.size())
-        overlay.fill(Qt.transparent)
-        mask_painter = QPainter(overlay)
-        mask_painter.setOpacity(0.5)
-        mask_painter.fillRect(self.rect(), QColor(0, 255, 0, 127))
-        mask_painter.end()
-        painter.drawPixmap(self.rect(), overlay)
-    
-    def toggle_layer_visibility(self, layer_name):
-        self.layers[layer_name]['visible'] = not self.layers[layer_name]['visible']
-        self.update()
-
-    def lock_layer(self, layer_name, lock_status=True):
-        self.layers[layer_name]['locked'] = lock_status
-
-    def reorder_layer(self, layer_name, new_index):
-        keys = list(self.layers.keys())
-        keys.remove(layer_name)
-        keys.insert(new_index, layer_name)
-        self.layers = {key: self.layers[key] for key in keys}
-
-    def get_current_image(self):
-        import numpy as np
-        from PyQt5.QtGui import QImage
-        import cv2
-
-        if self.current_image is None:
-            return None
-
-        qimage = self.current_image
-        width = qimage.width()
-        height = qimage.height()
-
-        try:
-            # Log detailed information about the format
-            print(f"QImage Format Code: {qimage.format()}, Byte Count: {qimage.byteCount()}")
-
-            # Handle supported formats
-            if qimage.format() == QImage.Format_RGB32:
-                ptr = qimage.bits()
-                ptr.setsize(qimage.byteCount())
-                img = np.array(ptr, dtype=np.uint8).reshape((height, qimage.bytesPerLine() // 4, 4))
-                img_bgr = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
-                return img_bgr
-            elif qimage.format() == QImage.Format_RGB888:
-                ptr = qimage.bits()
-                ptr.setsize(qimage.byteCount())
-                img = np.array(ptr, dtype=np.uint8).reshape((height, qimage.bytesPerLine() // 3, 3))
-                img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-                return img_bgr
-            elif qimage.format() == QImage.Format_Grayscale8:
-                ptr = qimage.bits()
-                ptr.setsize(qimage.byteCount())
-                img = np.array(ptr, dtype=np.uint8).reshape((height, width))
-                return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-
-            # Handle newer or uncommon formats (like Format_BGR30)
-            elif qimage.format() == 29:  # Assuming Format_BGR30
-                ptr = qimage.bits()
-                ptr.setsize(qimage.byteCount())
-                img = np.array(ptr, dtype=np.uint8).reshape((height, qimage.bytesPerLine() // 4, 4))
-                return img[:, :, :3]  # Use only the first three channels
-
-            # Log unsupported formats and raise error
-            print(f"Unsupported QImage format: {qimage.format()}")
-            raise ValueError("Unsupported QImage format. Please check the image format and ensure compatibility.")
-        except Exception as e:
-            print(f"Error during QImage conversion: {e}")
-            raise
+    # Optional: A simple zoom method that resizes the widget
+    def zoom(self, factor):
+        if self.pixmap() is not None:
+            new_width = self.pixmap().width() * factor
+            new_height = self.pixmap().height() * factor
+            self.resize(new_width, new_height)
