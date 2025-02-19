@@ -1,3 +1,4 @@
+# drawing_functions.py
 from PyQt5.QtCore import Qt, QRect
 from PyQt5.QtGui import QPainter, QPen, QColor
 
@@ -34,18 +35,22 @@ class DrawingFunctions:
     def mouseReleaseEvent(event, canvas):
         if canvas.drawing_mode == "bbox" and canvas.start_point and event.button() == Qt.LeftButton:
             rect = QRect(canvas.start_point, event.pos()).normalized()
-            canvas.annotations.append({
+            annotation = {
                 "type": "bbox",
                 "coords": [rect.x(), rect.y(), rect.width(), rect.height()]
-            })
+            }
+            # Save the annotation into the current layer
+            canvas.layers[canvas.current_layer].append(annotation)
             canvas.start_point = None
             canvas.end_point = None
             canvas.update()
         elif canvas.drawing_mode == "mask" and canvas.mask_points:
-            canvas.annotations.append({
+            annotation = {
                 "type": "mask",
                 "coords": [(p.x(), p.y()) for p in canvas.mask_points]
-            })
+            }
+            # Save the annotation into the current layer
+            canvas.layers[canvas.current_layer].append(annotation)
             canvas.mask_points = []
             canvas.update()
 
@@ -54,19 +59,19 @@ class DrawingFunctions:
         painter = QPainter(canvas)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        # Draw existing annotations
-        for annotation in canvas.annotations:
+        # Draw existing annotations from the current layer
+        for annotation in canvas.layers.get(canvas.current_layer, []):
             if annotation["type"] == "bbox":
                 x, y, w, h = annotation["coords"]
                 pen = QPen(QColor(0, 255, 0), 2)
                 painter.setPen(pen)
                 painter.drawRect(x, y, w, h)
             elif annotation["type"] == "mask":
-                points = [QRect(p[0], p[1], 2, 2) for p in annotation["coords"]]
+                # Draw each mask point as a small ellipse
                 pen = QPen(QColor(255, 0, 0), 2)
                 painter.setPen(pen)
-                for point in points:
-                    painter.drawEllipse(point)
+                for pt in annotation["coords"]:
+                    painter.drawEllipse(pt[0] - 2, pt[1] - 2, 4, 4)
 
         # Draw in-progress bounding box
         if canvas.drawing_mode == "bbox" and canvas.start_point and canvas.end_point:
@@ -75,7 +80,7 @@ class DrawingFunctions:
             rect = QRect(canvas.start_point, canvas.end_point).normalized()
             painter.drawRect(rect)
 
-        # Draw in-progress mask
+        # Draw in-progress mask (as connected lines)
         if canvas.drawing_mode == "mask" and canvas.mask_points:
             pen = QPen(QColor(255, 0, 0), 2)
             painter.setPen(pen)
@@ -83,4 +88,3 @@ class DrawingFunctions:
                 painter.drawLine(canvas.mask_points[i - 1], canvas.mask_points[i])
 
         painter.end()
-
