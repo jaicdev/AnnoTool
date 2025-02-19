@@ -1,16 +1,24 @@
+# canvas_operations.py
+import sys
+import os
+import copy
+import cv2
+import numpy as np
+import torch
+
 from PyQt5.QtWidgets import (
-    QMainWindow, QVBoxLayout, QHBoxLayout, QPushButton, QComboBox, QScrollArea, QWidget, QMessageBox
+    QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QPushButton,
+    QComboBox, QScrollArea, QWidget, QMessageBox, QLabel, QFileDialog, QShortcut
 )
-from PyQt5.QtCore import Qt, QRect
-from canvas_operations import AnnotationCanvas
+
+from PyQt5.QtCore import Qt, QRect, QPoint
+from PyQt5.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QKeySequence
 from file_management import FileManager
 from model_management import ModelManager
 from hotkeys import HotkeyManager
 from class_management import ClassManager
 from validation_tools import Validator
-from drawing_functions import DrawingFunctions
-import copy
-import cv2
+from canvas_operations import AnnotationCanvas
 
 class AnnotationTool(QMainWindow):
     def __init__(self):
@@ -102,7 +110,7 @@ class AnnotationTool(QMainWindow):
         central_widget.setLayout(main_layout)
         self.setCentralWidget(central_widget)
 
-        # Load hotkeys and apply them to the main window
+        # Apply hotkeys
         self.hotkey_manager.apply_hotkeys(self)
 
     def push_undo(self):
@@ -141,8 +149,7 @@ class AnnotationTool(QMainWindow):
         return temp_path
 
     def adjust_canvas_size(self):
-        current_image = self.canvas.current_image
-        if current_image:
+        if self.canvas.current_image:
             self.canvas.resize(640, 640)
 
     def show_previous(self):
@@ -173,62 +180,64 @@ class AnnotationTool(QMainWindow):
     def change_model(self):
         selected_model = self.model_dropdown.currentText()
         self.model_manager.set_current_model(selected_model)
+
     def auto_annotate(self):
-    model = self.model_manager.get_model()
-    if not model:
-        QMessageBox.warning(self, "Error", "No model selected or model failed to load.")
-        return
+        model = self.model_manager.get_model()
+        if not model:
+            QMessageBox.warning(self, "Error", "No model selected or model failed to load.")
+            return
 
-    image = self.canvas.get_current_image()
-    if image is None:
-        QMessageBox.warning(self, "Error", "No image loaded.")
-        return
+        image = self.canvas.current_image
+        if image is None:
+            QMessageBox.warning(self, "Error", "No image loaded.")
+            return
 
-    self.push_undo()
+        self.push_undo()
+        results = model.predict(self.file_manager.get_current_image())
 
-    # Run model prediction
-    results = model.predict(image)
-
-    annotations = []
-    for result in results:
-        # Process bounding boxes if available
-        if hasattr(result, 'boxes'):
-            for box in result.boxes:
-                try:
-                    x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-                    cls = int(box.cls[0])
+        annotations = []
+        for result in results:
+            if hasattr(result, 'boxes'):
+                for box in result.boxes:
+                    try:
+                        x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+                        cls = int(box.cls[0])
+                        annotations.append({
+                            "type": "bbox",
+                            "coords": [x1, y1, x2 - x1, y2 - y1],
+                            "class": cls
+                        })
+                    except Exception as e:
+                        print(f"Error processing bbox: {e}")
+            if hasattr(result, 'masks') and result.masks is not None:
+                masks = result.masks.data if hasattr(result.masks, 'data') else []
+                boxes_cls = result.boxes.cls if hasattr(result.boxes, 'cls') else []
+                for mask, cls in zip(masks, boxes_cls):
                     annotations.append({
-                        "type": "bbox",
-                        "coords": [x1, y1, x2 - x1, y2 - y1],
-                        "class": cls
+                        "type": "mask",
+                        "coords": mask.cpu().numpy().tolist(),
+                        "class": int(cls)
                     })
-                except Exception as e:
-                    print(f"Error processing bbox: {e}")
-        # Process segmentation masks if available
-        if hasattr(result, 'masks') and result.masks is not None:
-            masks = result.masks.data if hasattr(result.masks, 'data') else []
-            boxes_cls = result.boxes.cls if hasattr(result.boxes, 'cls') else []
-            for mask, cls in zip(masks, boxes_cls):
-                annotations.append({
-                    "type": "mask",
-                    "coords": mask.cpu().numpy().tolist(),  # Converting to list for consistency
-                    "class": int(cls)
-                })
-    self.canvas.set_annotations(annotations)
+        self.canvas.set_annotations(annotations)
 
     def activate_draw_bbox(self):
         QMessageBox.information(self, "Draw BBox", "Tool to draw bounding boxes activated!")
-        DrawingFunctions.enable_bbox_drawing(self.canvas)
+        # Activate drawing mode for bbox
+        self.canvas.drawing_mode = "bbox"
+        self.canvas.start_point = None
+        self.canvas.end_point = None
 
     def activate_draw_mask(self):
-        QMessageBox.information(self, "Draw Mask", "Tool to draw segmentation masks activated!")
-        DrawingFunctions.enable_mask_drawing(self.canvas)
+        QMessageBox.information(self, "Draw Mask", "Tool to draw masks activated!")
+        # Activate drawing mode for mask
+        self.canvas.drawing_mode = "mask"
+        self.canvas.mask_points = []
 
     def zoom_in(self):
-        self.canvas.scale(1.2, 1.2)
+        self.canvas.zoom(1.2)
 
     def zoom_out(self):
-        self.canvas.scale(0.8, 0.8)
+        self.canvas.zoom(0.8)
 
     def validate_annotations(self):
         annotations = self.canvas.get_annotations()
@@ -237,15 +246,3 @@ class AnnotationTool(QMainWindow):
             QMessageBox.warning(self, "Validation Issues", "\n".join(issues))
         else:
             QMessageBox.information(self, "Validation", "All annotations are valid!")
-
-    def setup_statistics_dashboard(self):
-        stats_button = QPushButton("Show Stats")
-        stats_button.clicked.connect(self.show_annotation_stats)
-        self.layout().addWidget(stats_button)
-
-    def show_annotation_stats(self):
-        annotations = self.canvas.get_annotations()
-        stats = self.validator.calculate_annotation_metrics(annotations)
-        stats_str = "\n".join([f"{cls}: {count}" for cls, count in stats.items()])
-        QMessageBox.information(self, "Annotation Statistics", stats_str)
-

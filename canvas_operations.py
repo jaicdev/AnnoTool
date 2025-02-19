@@ -1,10 +1,19 @@
-# canvas_operations.py
+import sys
+import os
+import copy
 import cv2
 import numpy as np
-from PyQt5.QtWidgets import QLabel
-from PyQt5.QtGui import QPixmap, QImage, QPainter, QPen, QColor
-from PyQt5.QtCore import Qt, QPoint, QRect
+import torch
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QPushButton,
+    QComboBox, QScrollArea, QWidget, QMessageBox, QLabel, QFileDialog, QShortcut
+)
+from PyQt5.QtCore import Qt, QRect, QPoint
+from PyQt5.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QKeySequence
 
+# ------------------------------------------
+# canvas_operations.py (AnnotationCanvas)
+# ------------------------------------------
 class AnnotationCanvas(QLabel):
     def __init__(self):
         super().__init__()
@@ -78,7 +87,7 @@ class AnnotationCanvas(QLabel):
             self._draw_bbox(painter, annotation["coords"])
         elif annotation_type == "mask":
             # Draw mask as connected points (or use polyline if desired)
-            points = [QPoint(pt[0], pt[1]) for pt in annotation["coords"]]
+            points = [QPoint(int(pt[0]), int(pt[1])) for pt in annotation["coords"]]
             pen = QPen(QColor(255, 0, 0), 2)
             painter.setPen(pen)
             if points:

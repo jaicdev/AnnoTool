@@ -4,7 +4,6 @@ from PyQt5.QtGui import QKeySequence
 
 class HotkeyManager:
     def __init__(self):
-        # Default hotkeys (can be loaded from a config file)
         self.hotkeys = {
             "undo": "Ctrl+Z",
             "redo": "Ctrl+Y",
@@ -23,10 +22,8 @@ class HotkeyManager:
             self.hotkeys[action] = new_hotkey
 
     def apply_hotkeys(self, parent_widget):
-        # Example of applying hotkeys
         parent_widget.shortcut_undo = QShortcut(QKeySequence(self.hotkeys["undo"]), parent_widget)
         parent_widget.shortcut_undo.activated.connect(parent_widget.undo)
 
         parent_widget.shortcut_save = QShortcut(QKeySequence(self.hotkeys["save"]), parent_widget)
         parent_widget.shortcut_save.activated.connect(parent_widget.save_annotations)
-

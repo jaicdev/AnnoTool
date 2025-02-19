@@ -1,4 +1,3 @@
-
 import torch
 from ultralytics import YOLO
 
@@ -37,6 +36,5 @@ class ModelManager:
         return results
 
     def fine_tune_model(self, training_data, output_path):
-        # Placeholder for fine-tuning logic
         print("Fine-tuning model with provided training data...")
         # Implement fine-tuning logic here

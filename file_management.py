@@ -1,6 +1,15 @@
+import sys
 import os
-from PyQt5.QtWidgets import QFileDialog, QMessageBox
-
+import copy
+import cv2
+import numpy as np
+import torch
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QPushButton,
+    QComboBox, QScrollArea, QWidget, QMessageBox, QLabel, QFileDialog, QShortcut
+)
+from PyQt5.QtCore import Qt, QRect, QPoint
+from PyQt5.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QKeySequence
 
 class FileManager:
     def __init__(self):
@@ -8,7 +17,6 @@ class FileManager:
         self.index = -1
 
     def browse_and_load_files(self):
-        # Open a dialog for the user to select a folder
         folder = QFileDialog.getExistingDirectory(None, "Select Folder", "")
         if not folder:
             QMessageBox.warning(None, "No Folder Selected", "Please select a valid folder containing images.")
@@ -16,7 +24,6 @@ class FileManager:
             self.index = -1
             return []
 
-        # Filter for image files in the selected folder
         exts = (".jpg", ".jpeg", ".png", ".bmp", ".tiff")
         try:
             self.files = [os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(exts)]
@@ -55,7 +62,6 @@ class FileManager:
             QMessageBox.warning(None, "No Image Selected", "Please select an image before saving annotations.")
             return False
 
-        # Use a structured naming convention for annotation files
         image_path = self.files[self.index]
         annotation_filename = os.path.splitext(os.path.basename(image_path))[0] + "_annotations.txt"
         annotations_dir = os.path.join(os.path.dirname(image_path), "annotations")
@@ -71,4 +77,3 @@ class FileManager:
         except Exception as e:
             QMessageBox.critical(None, "Error Saving Annotations", f"Failed to save annotations: {str(e)}")
             return False
-

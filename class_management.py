@@ -18,4 +18,3 @@ class ClassManager:
         if class_name not in self.classes:
             self.classes.append(class_name)
             self.class_colors[class_name] = color
-
