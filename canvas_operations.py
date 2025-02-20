@@ -34,21 +34,21 @@ class AnnotationCanvas(QLabel):
         if image is None:
             raise ValueError(f"Could not read image from path: {image_path}")
 
-        if len(image.shape) == 2:
-            h, w = image.shape
-            qt_image = QImage(image.data, w, h, w, QImage.Format_Grayscale8)
-        elif len(image.shape) == 3 and image.shape[2] == 3:
-            h, w, ch = image.shape
-            bytes_per_line = ch * w
-            qt_image = QImage(image.data, w, h, bytes_per_line, QImage.Format_BGR888)
-        else:
-            raise ValueError("Unsupported image format. Expected grayscale or BGR color format.")
+        # Store original dimensions (width, height)
+        self.original_size = (image.shape[1], image.shape[0])
+
+        # Resize the image to 640x640 for display
+        resized_image = cv2.resize(image, (640, 640))
+
+        h, w, ch = resized_image.shape
+        bytes_per_line = ch * w
+        qt_image = QImage(resized_image.data, w, h, bytes_per_line, QImage.Format_BGR888)
 
         self.current_image = qt_image
-        pixmap = QPixmap.fromImage(self.current_image)
-        self.setPixmap(pixmap)
+        self.setPixmap(QPixmap.fromImage(qt_image))
+        self.setFixedSize(640, 640)  # Force the canvas to be 640x640
         self.adjustSize()
-
+            
     def paintEvent(self, event):
         super().paintEvent(event)
 

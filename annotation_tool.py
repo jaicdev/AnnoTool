@@ -28,6 +28,8 @@ class AnnotationTool(QMainWindow):
         # Managers
         self.file_manager = FileManager()
         self.model_manager = ModelManager()
+        # Load YOLOv8 Detection by default (if available)
+        self.model_manager.set_current_model("YOLOv8 Detection")
         self.hotkey_manager = HotkeyManager()
         self.class_manager = ClassManager()
         self.validator = Validator()
@@ -172,7 +174,25 @@ class AnnotationTool(QMainWindow):
             QMessageBox.warning(self, "Error", "No annotations to save.")
             return
 
-        if self.file_manager.save_annotations(annotations):
+        # Get original dimensions stored in the canvas
+        original_w, original_h = self.canvas.original_size
+        # Calculate scaling factors (since display is fixed at 640x640)
+        scale_x = original_w / 640.0
+        scale_y = original_h / 640.0
+
+        scaled_annotations = []
+        for anno in annotations:
+            if anno["type"] == "bbox":
+                x, y, w, h = anno["coords"]
+                scaled_coords = [int(x * scale_x), int(y * scale_y), int(w * scale_x), int(h * scale_y)]
+                anno["coords"] = scaled_coords
+            elif anno["type"] == "mask":
+                scaled_coords = [(int(x * scale_x), int(y * scale_y)) for (x, y) in anno["coords"]]
+                anno["coords"] = scaled_coords
+            scaled_annotations.append(anno)
+
+        # Now, save the scaled_annotations instead of the raw ones
+        if self.file_manager.save_annotations(scaled_annotations):
             QMessageBox.information(self, "Success", "Annotations saved successfully!")
         else:
             QMessageBox.warning(self, "Error", "Failed to save annotations.")
@@ -187,14 +207,24 @@ class AnnotationTool(QMainWindow):
             QMessageBox.warning(self, "Error", "No model selected or model failed to load.")
             return
 
+<<<<<<< HEAD
         image = self.canvas.current_image
         if image is None:
+=======
+        # Create a temporary 640x640 image file for YOLO
+        current_img_path = self.file_manager.get_current_image()
+        if not current_img_path:
+>>>>>>> 3edf920 (updated default loading of yolov8s)
             QMessageBox.warning(self, "Error", "No image loaded.")
             return
+
+        # Preprocess to 640x640 (same function you use in load_image)
+        resized_path = self.preprocess_image(current_img_path)  # e.g., saves a 640x640 temp file
 
         self.push_undo()
         results = model.predict(self.file_manager.get_current_image())
 
+<<<<<<< HEAD
         annotations = []
         for result in results:
             if hasattr(result, 'boxes'):
@@ -218,6 +248,21 @@ class AnnotationTool(QMainWindow):
                         "coords": mask.cpu().numpy().tolist(),
                         "class": int(cls)
                     })
+=======
+        results = model.predict(resized_path)  # YOLO sees the same 640x640 image
+        annotations = []
+        for result in results:
+            for box in result.boxes:
+                x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+                cls = int(box.cls[0])
+                annotations.append({
+                    "type": "bbox",
+                    "coords": [x1, y1, x2 - x1, y2 - y1],
+                    "class": cls
+                })
+            # Similarly for masks...
+
+>>>>>>> 3edf920 (updated default loading of yolov8s)
         self.canvas.set_annotations(annotations)
 
     def activate_draw_bbox(self):
