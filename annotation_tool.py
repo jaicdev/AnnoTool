@@ -214,7 +214,6 @@ class AnnotationTool(QMainWindow):
         # Create a temporary 640x640 image file for YOLO
         current_img_path = self.file_manager.get_current_image()
         if not current_img_path:
->>>>>>> 3edf920 (updated default loading of yolov8s)
             QMessageBox.warning(self, "Error", "No image loaded.")
             return
 
@@ -262,7 +261,7 @@ class AnnotationTool(QMainWindow):
                 })
             # Similarly for masks...
 
->>>>>>> 3edf920 (updated default loading of yolov8s)
+
         self.canvas.set_annotations(annotations)
 
     def activate_draw_bbox(self):
